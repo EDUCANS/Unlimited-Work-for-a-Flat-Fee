@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>教員残業代シミュレーター｜給特法の未払い分を試算</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    background: #f7f6f2;
+    color: #262624;
+    margin: 0;
+    padding: 24px 16px 64px;
+    line-height: 1.7;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  .sub { font-size: 13px; color: #6b6a67; margin: 0 0 24px; }
+  .card {
+    background: #ffffff;
+    border: 1px solid #e5e3dc;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+  label { font-size: 13px; color: #6b6a67; display: block; margin-bottom: 4px; }
+  input[type=number], select {
+    width: 100%;
+    height: 40px;
+    border: 1px solid #d9d7cf;
+    border-radius: 8px;
+    padding: 0 10px;
+    font-size: 15px;
+    background: #fff;
+    color: #262624;
+  }
+  .slider-row { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .slider-row label { min-width: 150px; margin-bottom: 0; font-size: 14px; color: #262624; }
+  input[type=range] { flex: 1; accent-color: #b45f3c; }
+  .slider-val { font-size: 14px; font-weight: 600; min-width: 60px; text-align: right; }
+  .metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .metric {
+    background: #f4f2ec;
+    border-radius: 8px;
+    padding: 14px;
+  }
+  .metric p.label { font-size: 12px; color: #6b6a67; margin: 0 0 4px; }
+  .metric p.value { font-size: 19px; font-weight: 600; margin: 0; }
+  .note { font-size: 11px; color: #948f88; margin: 6px 0 0; }
+  .highlight {
+    background: #fceceb;
+    border: 1px solid #f0c2bf;
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .highlight p.label { font-size: 13px; color: #9c3b2f; margin: 0 0 4px; }
+  .highlight p.value { font-size: 30px; font-weight: 700; margin: 0 0 8px; color: #9c3b2f; }
+  .highlight p.yearly { font-size: 13px; color: #9c3b2f; margin: 0; }
+  select { appearance: none; }
+  footer { font-size: 11px; color: #948f88; margin-top: 24px; text-align: center; }
+  footer a { color: #948f88; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>教員残業代シミュレーター</h1>
+  <p class="sub">月収と残業時間を入力すると、労働基準法どおりに割増賃金を支払った場合の金額と、実際の教職調整額との差額を試算します。</p>
+
+  <div class="card">
+    <div class="row">
+      <div>
+        <label>月額基本給（教職調整額を除く本俸）</label>
+        <input type="number" id="salary" value="320000" step="1000">
+      </div>
+      <div>
+        <label>現在の教職調整額支給率（%）</label>
+        <input type="number" id="rate" value="5" step="0.5" min="0" max="20">
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>週の所定労働時間（標準38時間45分＝38.75）</label>
+        <input type="number" id="weeklyHours" value="38.75" step="0.25">
+      </div>
+      <div>
+        <label>休日勤務の扱い</label>
+        <select id="holidayMode">
+          <option value="legal">法定休日として計算（常に1.35倍）</option>
+          <option value="normal">所定休日として計算（合算・60h超1.35倍）</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="slider-row">
+      <label>平日の月間時間外時間</label>
+      <input type="range" min="0" max="100" value="45" step="1" id="weekday">
+      <span class="slider-val" id="weekdayOut">45時間</span>
+    </div>
+
+    <div class="slider-row">
+      <label>休日（土日等）の月間時間</label>
+      <input type="range" min="0" max="60" value="10" step="1" id="holiday">
+      <span class="slider-val" id="holidayOut">10時間</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="metric-grid">
+      <div class="metric">
+        <p class="label">基礎賃金（所定内・法定計算用）</p>
+        <p class="value" id="baseWage">-</p>
+      </div>
+      <div class="metric">
+        <p class="label">実質時給（総収入÷実働総時間）</p>
+        <p class="value" id="effectiveWage">-</p>
+        <p class="note" id="effectiveNote"></p>
+      </div>
+    </div>
+    <div class="metric" style="margin-bottom: 12px;">
+      <p class="label">労基法どおりに支払われるべき割増賃金（月額）</p>
+      <p class="value" id="dueAmount">-</p>
+      <p class="note" id="breakdown"></p>
+    </div>
+    <div class="metric">
+      <p class="label">現在の教職調整額（月額）</p>
+      <p class="value" id="currentPay">-</p>
+    </div>
+  </div>
+
+  <div class="highlight">
+    <p class="label">未払い分（月額）</p>
+    <p class="value" id="gapMonthly">-</p>
+    <p class="yearly">年間換算（同水準の残業が続いた場合）: <span id="gapYearly">-</span></p>
+  </div>
+
+  <footer>
+    ※ 労基法37条の割増賃金（月60時間まで1.25倍、超過分1.35倍）に基づく試算です。持ち帰り仕事・深夜割増は含みません。実際の制度上の給与体系とは一致しない場合があります。
+  </footer>
+
+</div>
+
+<script>
+function calc() {
+  const salary = parseFloat(document.getElementById('salary').value) || 0;
+  const rate = parseFloat(document.getElementById('rate').value) || 0;
+  const weeklyHours = parseFloat(document.getElementById('weeklyHours').value) || 38.75;
+  const weekday = parseFloat(document.getElementById('weekday').value) || 0;
+  const holiday = parseFloat(document.getElementById('holiday').value) || 0;
+  const mode = document.getElementById('holidayMode').value;
+
+  document.getElementById('weekdayOut').textContent = weekday + '時間';
+  document.getElementById('holidayOut').textContent = holiday + '時間';
+
+  const monthlyStandardHours = weeklyHours * 365 / 7 / 12;
+  const base = salary / monthlyStandardHours;
+
+  let due = 0;
+  let breakdownText = '';
+
+  if (mode === 'legal') {
+    const w60 = Math.min(weekday, 60);
+    const wOver = Math.max(weekday - 60, 0);
+    const weekdayPay = base * 1.25 * w60 + base * 1.35 * wOver;
+    const holidayPay = base * 1.35 * holiday;
+    due = weekdayPay + holidayPay;
+    breakdownText = '平日: 基礎賃金×1.25(〜60h)/1.35(超過分) ＋ 休日: 基礎賃金×1.35（法定休日扱い）';
+  } else {
+    const combined = weekday + holiday;
+    const c60 = Math.min(combined, 60);
+    const cOver = Math.max(combined - 60, 0);
+    due = base * 1.25 * c60 + base * 1.35 * cOver;
+    breakdownText = '平日＋休日を合算し、月60時間まで1.25倍、超過分は1.35倍';
+  }
+
+  const current = salary * (rate / 100);
+  const gap = Math.max(due - current, 0);
+
+  const totalHours = monthlyStandardHours + weekday + holiday;
+  const totalIncome = salary + current;
+  const effectiveWage = totalIncome / totalHours;
+
+  const yen = n => '¥' + Math.round(n).toLocaleString();
+
+  document.getElementById('baseWage').textContent = yen(base) + ' / 時';
+  document.getElementById('effectiveWage').textContent = yen(effectiveWage) + ' / 時';
+  document.getElementById('effectiveNote').textContent = '総収入' + yen(totalIncome) + ' ÷ 実働' + Math.round(totalHours) + '時間（所定' + Math.round(monthlyStandardHours) + 'h＋残業' + (weekday + holiday) + 'h）';
+  document.getElementById('currentPay').textContent = yen(current);
+  document.getElementById('dueAmount').textContent = yen(due);
+  document.getElementById('breakdown').textContent = breakdownText;
+  document.getElementById('gapMonthly').textContent = yen(gap);
+  document.getElementById('gapYearly').textContent = yen(gap * 12);
+}
+
+['salary','rate','weeklyHours','weekday','holiday','holidayMode'].forEach(id => {
+  document.getElementById(id).addEventListener('input', calc);
+});
+calc();
+</script>
+</body>
+</html>
