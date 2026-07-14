@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>教員残業代シミュレーター｜給特法の未払い分を試算</title>
+<!-- SRI: cdnjs公式ページ(https://cdnjs.com/libraries/html2canvas)の「Copy SRI Hash」で発行された値。
+     バージョンを上げる際は必ず対応するハッシュに更新すること。 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"
+  integrity="sha512-BNaRQnYJYiPSqHHDb58B0yaPfCu+Wgds8Gp/gU33kqBtgNS4tSPHuGibyoeqMV/TJlSKda6FXzoEyYGjTe+vXA=="
+  crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    background: #f7f6f2;
+    color: #262624;
+    margin: 0;
+    padding: 24px 16px 64px;
+    line-height: 1.7;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; }
+
+  /* ---- 見出し・タイポグラフィ ---- */
+  h1 { font-size: 24px; font-weight: 800; letter-spacing: .01em; margin: 0 0 6px; }
+  .sub { font-size: 13.5px; color: #6b6a67; margin: 0 0 8px; }
+  .credit { text-align: right; font-size: 12px; color: #948f88; margin: 0 0 24px; }
+  .credit a { color: #948f88; }
+  h2.section-title { font-size: 14px; font-weight: 600; margin: 28px 0 10px; color: #45443f; }
+  h3.card-title { font-size: 14px; font-weight: 700; color: #9c3b2f; margin: 0 0 14px; letter-spacing: .02em; }
+
+  /* 数値は全て等幅数字で桁ブレを防ぐ */
+  .metric p.value, .slider-val, .display-box, input[type=number] {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .card {
+    background: #ffffff;
+    border: 1px solid #e5e3dc;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+
+  /* 搾取額カード：ページの主役として強調（旧 .highlight を統合） */
+  .card.emphasis { background: #fceceb; border-color: #f0c2bf; }
+  .card.emphasis .metric { background: #ffffff; border: 1px solid #f4dbd8; }
+  .card.emphasis .metric p.value { color: #9c3b2f; }
+  .card.emphasis .metric p.value.primary { font-size: 28px; }
+
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .row + .row { margin-top: 16px; }
+  label { font-size: 13px; color: #6b6a67; display: block; margin-bottom: 4px; }
+
+  input[type=number], select {
+    width: 100%;
+    height: 40px;
+    border: 1px solid #d9d7cf;
+    border-radius: 8px;
+    padding: 0 10px;
+    font-size: 15px;
+    background: #fff;
+    color: #262624;
+  }
+  input[type=number]:focus-visible, select:focus-visible,
+  .share-btn:focus-visible, summary:focus-visible, input[type=range]:focus-visible {
+    outline: 2px solid #b45f3c;
+    outline-offset: 2px;
+  }
+
+  /* 金額入力欄の「円」サフィックス */
+  .num-wrap { position: relative; }
+  .num-wrap input { padding-right: 34px; }
+  .num-wrap .unit {
+    position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+    font-size: 12px; color: #948f88; pointer-events: none;
+  }
+
+  /* select：appearance:none で消えていた矢印を復元 */
+  select {
+    appearance: none;
+    padding-right: 32px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%236b6a67' stroke-width='1.5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+  }
+
+  .display-box {
+    width: 100%;
+    height: 40px;
+    border: 1px dashed #c9c6bc;
+    border-radius: 8px;
+    padding: 0 10px;
+    font-size: 15px;
+    color: #262624;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+  }
+
+  .slider-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .slider-row label { min-width: 3em; margin-bottom: 0; font-size: 14px; color: #262624; }
+  input[type=range] { flex: 1; accent-color: #b45f3c; min-width: 0; }
+  .slider-val { font-size: 14px; font-weight: 600; min-width: 76px; text-align: right; }
+
+  .metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .metric {
+    background: #f4f2ec;
+    border-radius: 8px;
+    padding: 14px;
+  }
+  .metric p.label { font-size: 12px; color: #262624; font-weight: 700; margin: 0 0 4px; }
+  .metric p.value { font-size: 19px; font-weight: 600; margin: 0; }
+  .note { font-size: 11px; color: #948f88; margin: 6px 0 0; }
+
+  /* details：開閉が分かる矢印付きサマリー */
+  details.card { padding: 16px 20px; }
+  summary {
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 700;
+    color: #9c3b2f;
+    letter-spacing: .02em;
+    list-style: none;
+    user-select: none;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary::before {
+    content: "▸";
+    display: inline-block;
+    margin-right: 6px;
+    transition: transform .15s ease;
+  }
+  details[open] summary::before { transform: rotate(90deg); }
+
+  footer { font-size: 11px; color: #948f88; margin-top: 24px; text-align: center; }
+  footer a { color: #948f88; }
+
+  /* ---- シェアセクション ---- */
+  .share-card { background: #fff; border: 1px solid #e5e3dc; border-radius: 12px; padding: 20px; }
+  .share-desc { font-size: 12.5px; color: #6b6a67; margin: 0 0 14px; }
+  .share-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
+  .share-btn {
+    flex: 1;
+    min-width: 140px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 44px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+  }
+  .share-btn.x { background: #000; color: #fff; }
+  .share-btn.save { background: #f4f2ec; color: #262624; border: 1px solid #d9d7cf; }
+  .share-btn:hover:not(:disabled) { filter: brightness(0.95); }
+  .share-btn:disabled { opacity: 0.5; cursor: wait; }
+  .share-preview-wrap { margin-top: 14px; text-align: center; }
+  .share-preview-wrap img { max-width: 100%; border-radius: 10px; border: 1px solid #e5e3dc; }
+  .share-status { font-size: 12px; color: #948f88; margin-top: 8px; text-align: center; }
+
+  /* ---- モバイル ---- */
+  @media (max-width: 480px) {
+    .row, .metric-grid { grid-template-columns: 1fr; }
+    .slider-val { min-width: 64px; }
+    h1 { font-size: 21px; }
+  }
+
+  /* オフスクリーンでレンダリングするOGP風カード（html2canvas用） */
+  #ogpCard {
+    position: fixed;
+    left: -9999px;
+    top: 0;
+    width: 1200px;
+    height: 630px;
+    background: linear-gradient(135deg,#fceceb 0%, #f7f6f2 55%, #f4f2ec 100%);
+    padding: 64px 72px;
+    box-sizing: border-box;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    color: #262624;
+  }
+  #ogpCard .ogp-kicker {
+    font-size: 24px;
+    color: #9c3b2f;
+    font-weight: 700;
+    letter-spacing: 1px;
+    margin-bottom: 18px;
+    text-align: center;
+  }
+  #ogpCard .ogp-headline {
+    font-size: 46px;
+    font-weight: 700;
+    line-height: 1.35;
+    margin-bottom: 20px;
+    text-align: center;
+  }
+  #ogpCard .ogp-headline .num {
+    color: #9c3b2f;
+    font-size: 64px;
+  }
+  #ogpCard .ogp-compare {
+    margin-bottom: 10px;
+  }
+  #ogpCard .ogp-compare-row {
+    margin-bottom: 10px;
+  }
+  #ogpCard .ogp-compare-row:last-child {
+    margin-bottom: 0;
+  }
+  #ogpCard .ogp-compare-row .cl {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 16px;
+    color: #6b6a67;
+    margin-bottom: 5px;
+  }
+  #ogpCard .ogp-compare-row .cl #ogpPaidPercent {
+    font-size: 20px;
+    font-weight: 700;
+    color: #9c3b2f;
+  }
+  #ogpCard .bar-track {
+    width: 100%;
+    height: 22px;
+    background: #efece5;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  #ogpCard .bar-fill {
+    height: 100%;
+    border-radius: 6px;
+  }
+  #ogpCard .bar-fill.due { background: #9c3b2f; }
+  #ogpCard .bar-fill.paid { background: #c9a89f; }
+  #ogpCard .ogp-gap-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: stretch;
+    gap: 20px;
+    margin-top: 22px;
+    padding-top: 20px;
+    border-top: 1px solid #e5d6d3;
+  }
+  #ogpCard .ogp-gap-item {
+    flex: 1;
+    background: #ffffff;
+    border: 2px solid #f0c2bf;
+    border-radius: 14px;
+    padding: 18px 22px;
+    box-shadow: 0 3px 10px rgba(156,59,47,0.10);
+  }
+  #ogpCard .ogp-gap-item.right { text-align: right; }
+  #ogpCard .ogp-gap-label {
+    font-size: 15px;
+    color: #6b6a67;
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+  #ogpCard .ogp-gap-value {
+    font-size: 38px;
+    font-weight: 700;
+    color: #9c3b2f;
+  }
+  #ogpCard .ogp-footer {
+    position: absolute;
+    bottom: 48px;
+    left: 72px;
+    right: 72px;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    font-size: 18px;
+    color: #948f88;
+  }
+  #ogpCard .ogp-credit { font-weight: 700; color: #45443f; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>教員残業代シミュレーター</h1>
+  <p class="sub">公立学校（小中高）の教員がどれだけ搾取されているかを可視化します。月額基本給と時間外在校等時間を入力すると、労働基準法どおりに割増賃金を支払った場合の金額と、実際の支給額（教職調整額＋部活動手当）との差額を試算できます。</p>
+  <p class="credit">制作者：EDUCANS（<a href="https://x.com/Darwinian204" target="_blank" rel="noopener">@Darwinian204</a>）</p>
+
+  <!-- ==================== 給与 ==================== -->
+  <div class="card">
+    <h3 class="card-title">給与</h3>
+    <div class="row">
+      <div>
+        <label for="salary">月額基本給</label>
+        <div class="num-wrap">
+          <input type="number" id="salary" value="320000" step="1000" min="0" inputmode="numeric">
+          <span class="unit">円</span>
+        </div>
+      </div>
+      <div>
+        <label for="rate">教職調整額の支給率</label>
+        <select id="rate">
+          <option value="4">〜2025年12月（4%）</option>
+          <option value="5" selected>2026年1月〜（5%）</option>
+          <option value="6">2027年1月〜（6%）</option>
+          <option value="7">2028年1月〜（7%）</option>
+          <option value="8">2029年1月〜（8%）</option>
+          <option value="9">2030年1月〜（9%）</option>
+          <option value="10">2031年1月〜（10%以降）</option>
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="bukatsuPay">部活動手当（月額）</label>
+        <div class="num-wrap">
+          <input type="number" id="bukatsuPay" value="14400" step="100" min="0" inputmode="numeric">
+          <span class="unit">円</span>
+        </div>
+      </div>
+      <div>
+        <label id="currentPayLabel">教職調整額（自動計算）</label>
+        <div class="display-box" id="currentPay" role="status" aria-labelledby="currentPayLabel">-</div>
+      </div>
+    </div>
+    <p class="note" id="salaryInputWarning" style="display:none; color:#9c3b2f; margin-top:10px;"></p>
+  </div>
+
+  <!-- ==================== 時間外在校等時間 ==================== -->
+  <div class="card">
+    <h3 class="card-title">月あたりの時間外在校等時間</h3>
+
+    <div class="slider-row">
+      <label for="weekday">平日</label>
+      <input type="range" min="0" max="120" value="45" step="0.5" id="weekday">
+      <span class="slider-val" id="weekdayOut">45時間</span>
+    </div>
+    <div class="slider-row">
+      <label for="holidaySat">土曜</label>
+      <input type="range" min="0" max="60" value="8" step="0.5" id="holidaySat">
+      <span class="slider-val" id="holidaySatOut">8時間</span>
+    </div>
+    <div class="slider-row" style="margin-bottom: 4px;">
+      <label for="holidaySun">日曜</label>
+      <input type="range" min="0" max="60" value="4" step="0.5" id="holidaySun">
+      <span class="slider-val" id="holidaySunOut">4時間</span>
+    </div>
+    <p class="note">「時間外在校等時間」とは、所定の勤務時間を超えて校内外で職務に従事した時間です。振替休日が適切に運用されていれば、土曜出勤分は時間外に当たらない場合があります。</p>
+  </div>
+
+  <!-- ==================== 計算結果（時給換算） ==================== -->
+  <div class="card">
+    <h3 class="card-title">時給換算</h3>
+    <div class="metric-grid">
+      <div class="metric">
+        <p class="label">基礎賃金</p>
+        <p class="value" id="baseWage">-</p>
+        <p class="note">月額基本給を所定労働時間で割った単価です。</p>
+      </div>
+      <div class="metric">
+        <p class="label">実質時給</p>
+        <p class="value" id="effectiveWage">-</p>
+        <p class="note">総収入を実働時間（所定＋時間外）で割った単価です。</p>
+      </div>
+    </div>
+    <div class="metric">
+      <p class="label">残業1時間あたりの実質支給額</p>
+      <p class="value" id="deemedHourlyRate">-</p>
+      <p class="note">教職調整額＋部活動手当を残業代とみなし、時間外在校等時間で割った単価です。</p>
+      <p class="note" id="deemedRateCaveat" style="display:none; color:#9c3b2f;"></p>
+    </div>
+  </div>
+
+  <details class="card">
+    <summary>計算の詳細を見る</summary>
+    <div style="margin-top:12px;">
+      <p class="note">基礎賃金：月額基本給 ÷ 所定労働時間（<span id="hwDetailMonthlyHours">-</span>） ＝ <span id="hwDetailBase">-</span></p>
+      <p class="note" style="margin-top:8px;">実質時給：総収入（月額基本給＋教職調整額＋部活動手当）<span id="hwDetailEffectiveIncome">-</span> ÷ 実働時間<span id="hwDetailEffectiveHours">-</span> ＝ <span id="hwDetailEffective">-</span></p>
+      <p class="note" style="margin-top:8px;">残業1時間あたりの実質支給額：<span id="hwDetailDeemed">-</span></p>
+      <p class="note" style="margin-top:8px;" id="hwDetailMinWage"></p>
+    </div>
+  </details>
+
+  <!-- ==================== 搾取額（主結果） ==================== -->
+  <div class="card emphasis">
+    <h3 class="card-title">搾取額（未払い相当額）</h3>
+    <div class="metric-grid" style="margin-bottom:0;">
+      <div class="metric">
+        <p class="label">月額</p>
+        <p class="value primary" id="gapMonthly">-</p>
+        <p class="note">本来払われるべき割増賃金から、実際の支給額（教職調整額＋部活動手当）を引いた差額です。</p>
+      </div>
+      <div class="metric">
+        <p class="label">年間換算</p>
+        <p class="value primary" id="gapYearly">-</p>
+        <p class="note">同水準の残業が12か月続いた場合の累計です。</p>
+      </div>
+    </div>
+  </div>
+
+  <details class="card">
+    <summary>計算の詳細を見る</summary>
+    <div style="margin-top:12px;">
+      <p class="note">月あたりの所定労働時間：週38時間45分（1日7時間45分×5日）× 365日 ÷ 7 ÷ 12 ＝ <span id="detailMonthlyHours">-</span></p>
+      <p class="note" style="margin-top:8px;">基礎賃金：月額基本給 ÷ 所定労働時間 ＝ <span id="detailBase">-</span></p>
+      <p class="note" style="margin-top:8px;">本来払われるべき割増賃金（<span id="breakdown"></span>）：<span id="detailDue">-</span></p>
+      <p class="note" style="margin-top:8px;">教職調整額（月額）：月額基本給 × 支給率 ＝ <span id="detailCurrent">-</span></p>
+      <p class="note" style="margin-top:8px;">搾取額 ＝ 本来払われるべき割増賃金 － 既払い額（教職調整額＋部活動手当）：<span id="detailGap">-</span></p>
+    </div>
+  </details>
+
+  <!-- ==================== SNSシェア ==================== -->
+  <h2 class="section-title">結果をシェア</h2>
+  <div class="share-card">
+    <p class="share-desc">計算結果を1枚のカード画像にできます。対応端末では共有シートからXなどへ直接送れます。非対応の環境では画像を保存し、投稿に添付してください。投稿用リンクには入力条件が含まれ、開いた人は同じ条件から自分の数値で再計算できます。</p>
+    <div class="share-buttons">
+      <button class="share-btn save" id="btnGenerate">画像を生成</button>
+      <button class="share-btn x" id="btnTweet">Xで投稿する</button>
+    </div>
+    <div class="share-preview-wrap" id="sharePreviewWrap" style="display:none;">
+      <img id="sharePreviewImg" alt="シェア用カードのプレビュー">
+      <div class="share-status" id="shareStatus"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- html2canvasで書き出す非表示のOGP風カード -->
+<div id="ogpCard">
+  <div class="ogp-kicker">教員残業代シミュレーター</div>
+  <div class="ogp-headline">私の残業1時間あたりの実質支給額は<br><span class="num" id="ogpWage">¥0</span> です</div>
+  <div class="ogp-compare">
+    <div class="ogp-compare-row">
+      <div class="cl"><span>本来の割増賃金に対する実際の支給割合</span><span id="ogpPaidPercent">0%</span></div>
+      <div class="bar-track"><div class="bar-fill paid" id="ogpBarPaid" style="width:0%"></div></div>
+    </div>
+  </div>
+  <div class="ogp-gap-row">
+    <div class="ogp-gap-item">
+      <div class="ogp-gap-label">搾取額（月額）</div>
+      <div class="ogp-gap-value" id="ogpGapMonthly">¥0</div>
+    </div>
+    <div class="ogp-gap-item right">
+      <div class="ogp-gap-label">搾取額（年間換算）</div>
+      <div class="ogp-gap-value yearly" id="ogpGapYearly">¥0</div>
+    </div>
+  </div>
+  <div class="ogp-footer">
+    <div class="ogp-credit">制作者：EDUCANS（@Darwinian204）</div>
+  </div>
+</div>
+
+<script>
+const WEEKLY_STANDARD_HOURS = 38.75; // 公立学校共通：1日7時間45分×5日
+
+let lastResult = null;
+
+/* =========================================================
+   URLパラメータによる入力状態の共有
+   ?salary=320000&rate=5&bukatsu=14400&wd=45&sat=8&sun=4
+   ========================================================= */
+const PARAM_KEYS = { salary: 'salary', rate: 'rate', bukatsuPay: 'bukatsu', weekday: 'wd', holidaySat: 'sat', holidaySun: 'sun' };
+const isHttp = /^https?:$/.test(location.protocol); // file:// 等では共有URLを生成しない
+
+function applyUrlParams() {
+  const q = new URLSearchParams(location.search);
+  const setNum = (id, key, min, max) => {
+    if (!q.has(key)) return;
+    const v = parseFloat(q.get(key));
+    if (Number.isFinite(v)) document.getElementById(id).value = Math.min(Math.max(v, min), max);
+  };
+  setNum('salary', 'salary', 0, 10000000);
+  setNum('bukatsuPay', 'bukatsu', 0, 1000000);
+  setNum('weekday', 'wd', 0, 120);
+  setNum('holidaySat', 'sat', 0, 60);
+  setNum('holidaySun', 'sun', 0, 60);
+  if (q.has('rate')) {
+    // 支給率はselectの選択肢に存在する値のみ受け付ける
+    const r = q.get('rate');
+    const sel = document.getElementById('rate');
+    if (Array.from(sel.options).some(o => o.value === r)) sel.value = r;
+  }
+}
+
+function buildShareUrl() {
+  if (!isHttp) return '';
+  const p = new URLSearchParams();
+  Object.entries(PARAM_KEYS).forEach(([id, key]) => {
+    p.set(key, document.getElementById(id).value);
+  });
+  return location.origin + location.pathname + '?' + p.toString();
+}
+
+function calc() {
+  const salary = Math.max(parseFloat(document.getElementById('salary').value) || 0, 0);
+  const rate = Math.max(parseFloat(document.getElementById('rate').value) || 0, 0);
+  const weekday = Math.max(parseFloat(document.getElementById('weekday').value) || 0, 0);
+  const holidaySat = Math.max(parseFloat(document.getElementById('holidaySat').value) || 0, 0);
+  const holidaySun = Math.max(parseFloat(document.getElementById('holidaySun').value) || 0, 0);
+
+  // 0.5h刻み入力に対応した時間表示（整数なら小数点なし、それ以外は小数第1位まで）
+  const fmtH = h => (Number.isInteger(h) ? h.toString() : h.toFixed(1));
+  const fmtHours = h => fmtH(h) + '時間';
+  document.getElementById('weekdayOut').textContent = fmtHours(weekday);
+  document.getElementById('holidaySatOut').textContent = fmtHours(holidaySat);
+  document.getElementById('holidaySunOut').textContent = fmtHours(holidaySun);
+
+  const monthlyStandardHours = WEEKLY_STANDARD_HOURS * 365 / 7 / 12;
+  const base = salary / monthlyStandardHours;
+
+  // 土曜（所定休日）は平日残業と合算、日曜（法定休日）は常に1.35倍で別枠
+  const combined = weekday + holidaySat;
+  const c60 = Math.min(combined, 60);
+  const cOver = Math.max(combined - 60, 0);
+  const weekdayAndSatPay = base * 1.25 * c60 + base * 1.5 * cOver;
+  const sunPay = base * 1.35 * holidaySun;
+  const due = weekdayAndSatPay + sunPay;
+  const breakdownText = '平日＋土曜(所定休日)を合算し月60時間まで1.25倍/超過分1.5倍 ＋ 日曜(法定休日)は常に1.35倍';
+
+  const bukatsuPay = Math.max(parseFloat(document.getElementById('bukatsuPay').value) || 0, 0);
+
+  const current = salary * (rate / 100);
+  const alreadyPaid = current + bukatsuPay;
+  const gap = Math.max(due - alreadyPaid, 0);
+
+  const holidayTotal = holidaySat + holidaySun;
+  const totalHours = monthlyStandardHours + weekday + holidayTotal;
+  const totalIncome = salary + alreadyPaid;
+  const effectiveWage = totalIncome / totalHours;
+
+  const yen = n => '¥' + Math.round(n).toLocaleString();
+
+  document.getElementById('baseWage').textContent = yen(base) + ' / 時';
+  document.getElementById('effectiveWage').textContent = yen(effectiveWage) + ' / 時';
+  document.getElementById('currentPay').textContent = yen(current);
+  document.getElementById('breakdown').textContent = breakdownText;
+  // 月額を先に丸め、その丸めた値を12倍して年間換算とする（検算した際に一致させるため）
+  const gapMonthlyRounded = Math.round(gap);
+  const gapYearlyRounded = gapMonthlyRounded * 12;
+  const yenExact = n => '¥' + n.toLocaleString();
+  document.getElementById('gapMonthly').textContent = yenExact(gapMonthlyRounded);
+  document.getElementById('gapYearly').textContent = yenExact(gapYearlyRounded);
+
+  // 教職調整額＋部活動手当を残業代とみなした場合の実質単価
+  const overtimeHoursTotal = weekday + holidaySat + holidaySun;
+  const deemedRate = overtimeHoursTotal > 0 ? alreadyPaid / overtimeHoursTotal : 0;
+  // 残業時間がこの時間未満だと「既払い額÷残業時間」の比率が入力の微小な誤差やイレギュラーな
+  // 手当（部活動手当の年額入力ミスなど）で簡単に破綻するため、参考値扱いにする閾値
+  const MIN_HOURS_FOR_RELIABLE_RATE = 5;
+  const deemedRateReliable = overtimeHoursTotal >= MIN_HOURS_FOR_RELIABLE_RATE;
+
+  document.getElementById('deemedHourlyRate').textContent = overtimeHoursTotal > 0 ? yen(deemedRate) + ' / 時' : '-';
+
+  const deemedRateCaveatEl = document.getElementById('deemedRateCaveat');
+  if (overtimeHoursTotal > 0 && !deemedRateReliable) {
+    deemedRateCaveatEl.style.display = 'block';
+    deemedRateCaveatEl.textContent =
+      '※時間外時間が月' + MIN_HOURS_FOR_RELIABLE_RATE + '時間未満のため、この単価は参考値です。' +
+      '部活動手当の入力誤り（年額を月額欄に入力した等）でも同様に大きくブレます。';
+  } else {
+    deemedRateCaveatEl.style.display = 'none';
+    deemedRateCaveatEl.textContent = '';
+  }
+
+  // 出典：厚生労働省 地域別最低賃金改定状況（2025年度・全国加重平均、確定値）
+  // 取得日：2026年7月時点で反映
+  // 更新目安：最低賃金は例年10月に改定発効するため、次回は2026年10月以降に
+  //           厚労省発表の2026年度改定額へ更新すること（例年7月頃に目安答申、10月発効）
+  const MINIMUM_WAGE_AVG = 1121; // 2025年度・全国加重平均（円/時）
+
+  // 時給換算カードの「計算の詳細を見る」
+  document.getElementById('hwDetailMonthlyHours').textContent = monthlyStandardHours.toFixed(1) + '時間';
+  document.getElementById('hwDetailBase').textContent = yen(salary) + ' ÷ ' + monthlyStandardHours.toFixed(1) + '時間 ＝ ' + yen(base) + '/時';
+  document.getElementById('hwDetailEffectiveIncome').textContent = yen(totalIncome);
+  document.getElementById('hwDetailEffectiveHours').textContent = fmtH(totalHours) + '時間（所定' + monthlyStandardHours.toFixed(1) + 'h＋時間外' + fmtH(weekday + holidayTotal) + 'h）';
+  document.getElementById('hwDetailEffective').textContent = yen(effectiveWage) + '/時';
+  document.getElementById('hwDetailDeemed').textContent = overtimeHoursTotal > 0
+    ? '(教職調整額' + yen(current) + ' ＋ 部活動手当' + yen(bukatsuPay) + ') ÷ 時間外' + fmtH(overtimeHoursTotal) + 'h ＝ ' + yen(deemedRate) + '/時'
+    : '時間外在校等時間が0のため計算できません';
+  document.getElementById('hwDetailMinWage').textContent = overtimeHoursTotal > 0
+    ? '全国最低賃金の加重平均（2025年度・時給' + MINIMUM_WAGE_AVG.toLocaleString() + '円）の' + Math.round(deemedRate / MINIMUM_WAGE_AVG * 100) + '%に相当します。'
+      + (deemedRateReliable ? '' : '（※時間外時間が少なく参考値）')
+    : '';
+
+  // 計算の詳細（内訳）
+  document.getElementById('detailMonthlyHours').textContent = monthlyStandardHours.toFixed(1) + '時間';
+  document.getElementById('detailBase').textContent = yen(salary) + ' ÷ ' + monthlyStandardHours.toFixed(1) + '時間 ＝ ' + yen(base) + '/時';
+  document.getElementById('detailDue').textContent = '（平日＋土曜 ' + fmtH(c60) + 'h × 1.25倍） + （平日＋土曜 超過分 ' + fmtH(cOver) + 'h × 1.5倍） + （日曜 ' + fmtH(holidaySun) + 'h × 1.35倍） ＝ ' + yen(due);
+  document.getElementById('detailCurrent').textContent = yen(salary) + ' × ' + rate + '% ＝ ' + yen(current);
+  document.getElementById('detailGap').textContent = yen(due) + ' － （' + yen(current) + ' + ' + yen(bukatsuPay) + '） ＝ ' + yen(gap);
+
+  // 極端な入力値への軽い警告（ハード制限はせず、入力ミスに気づけるようにするだけ）
+  const salaryWarningEl = document.getElementById('salaryInputWarning');
+  const salaryWarnings = [];
+  if (salary > 0 && salary < 100000) {
+    salaryWarnings.push('月額基本給が10万円未満です。手当込みの額面ではなく基本給のみを入力しているか確認してください。');
+  }
+  if (salary > 800000) {
+    salaryWarnings.push('月額基本給が80万円超です。管理職級でも通常はこれより低いため、入力桁を確認してください。');
+  }
+  if (bukatsuPay > 100000) {
+    salaryWarnings.push('部活動手当が月10万円超です。年額をそのまま入力していないか確認してください。');
+  }
+  if (salaryWarnings.length > 0) {
+    salaryWarningEl.style.display = 'block';
+    salaryWarningEl.textContent = '⚠ ' + salaryWarnings.join(' ');
+  } else {
+    salaryWarningEl.style.display = 'none';
+    salaryWarningEl.textContent = '';
+  }
+
+  // 棒グラフ用：本来の割増賃金(due)を100%とした場合の実際の支給額(alreadyPaid)の比率
+  const paidRatio = due > 0 ? Math.min(alreadyPaid / due, 1) * 100 : 0;
+
+  // 現在の入力状態をURLに反映（アドレスバーのコピーでもそのまま共有できる）
+  const shareUrl = buildShareUrl();
+  if (isHttp) {
+    // Safariはスライダー連打等で短時間に多数回呼ぶとSecurityErrorを投げるため握りつぶす
+    try { history.replaceState(null, '', shareUrl); } catch (e) { /* レート制限・サンドボックス環境では無視 */ }
+  }
+
+  lastResult = {
+    effectiveWageText: yen(effectiveWage),
+    deemedRateText: overtimeHoursTotal > 0 ? yen(deemedRate) : '-',
+    gapMonthlyText: yenExact(gapMonthlyRounded),
+    gapYearlyText: yenExact(gapYearlyRounded),
+    dueText: yen(due),
+    alreadyPaidText: yen(alreadyPaid),
+    paidRatio: paidRatio,
+    shareUrl: shareUrl
+  };
+
+  resetSharePreview();
+}
+
+function resetSharePreview() {
+  document.getElementById('sharePreviewWrap').style.display = 'none';
+  document.getElementById('shareStatus').textContent = '';
+}
+
+const INPUT_IDS = ['salary','rate','weekday','holidaySat','holidaySun','bukatsuPay'];
+
+// range/numberいずれもinputイベントで即時反映されるため、changeとの二重登録はしない
+INPUT_IDS.forEach(id => {
+  document.getElementById(id).addEventListener('input', calc);
+});
+applyUrlParams();
+calc();
+
+/* =========================================================
+   SNSシェア用画像生成（html2canvas）
+   ========================================================= */
+async function generateShareCanvas() {
+  if (!lastResult) return null;
+  // 1時間あたりの残業代に加え、搾取額（月額・年間換算）も金額込みで画像に掲載する。
+  document.getElementById('ogpWage').textContent = lastResult.deemedRateText;
+  document.getElementById('ogpBarPaid').style.width = lastResult.paidRatio + '%';
+  document.getElementById('ogpPaidPercent').textContent = Math.round(lastResult.paidRatio) + '%';
+  document.getElementById('ogpGapMonthly').textContent = lastResult.gapMonthlyText;
+  document.getElementById('ogpGapYearly').textContent = lastResult.gapYearlyText;
+
+  const target = document.getElementById('ogpCard');
+  return html2canvas(target, { scale: 2, backgroundColor: '#f7f6f2' });
+}
+
+// Web Share API（ファイル共有）の対応判定。モバイルでは共有シートから画像＋本文を直接投稿できる
+const canShareFiles = (() => {
+  try {
+    return !!(navigator.canShare && navigator.canShare({ files: [new File([''], 'x.png', { type: 'image/png' })] }));
+  } catch (e) { return false; }
+})();
+
+const GENERATE_LABEL = canShareFiles ? '画像を生成して共有' : '画像を生成して保存';
+document.getElementById('btnGenerate').textContent = GENERATE_LABEL;
+
+function buildShareText() {
+  return '私の月あたりの搾取額は ' + lastResult.gapMonthlyText + ' でした。\n' +
+    '（年間換算 ' + lastResult.gapYearlyText + '）\n\n' +
+    '残業1時間あたりの実質支給額は ' + lastResult.deemedRateText + ' でした。\n\n' +
+    '#教師のバトン #教員残業代シミュレーター';
+}
+
+document.getElementById('btnGenerate').addEventListener('click', async () => {
+  const btn = document.getElementById('btnGenerate');
+  const statusEl = document.getElementById('shareStatus');
+  btn.disabled = true;
+  btn.textContent = '生成中…';
+  statusEl.textContent = '';
+  try {
+    const canvas = await generateShareCanvas();
+    if (!canvas) throw new Error('先に計算結果を表示してください');
+
+    const dataUrl = canvas.toDataURL('image/png');
+    document.getElementById('sharePreviewImg').src = dataUrl;
+    document.getElementById('sharePreviewWrap').style.display = 'block';
+
+    // 対応端末：OSの共有シートで画像＋本文＋リンクをまとめて共有
+    if (canShareFiles) {
+      const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+      if (blob) {
+        const file = new File([blob], 'teacher-overtime-card.png', { type: 'image/png' });
+        try {
+          await navigator.share({
+            files: [file],
+            text: buildShareText() + (lastResult.shareUrl ? '\n' + lastResult.shareUrl : '')
+          });
+          statusEl.textContent = '共有シートを開きました。';
+          return;
+        } catch (e) {
+          if (e && e.name === 'AbortError') return; // ユーザーが共有をキャンセルした場合。エラー扱いにしない
+          // 共有自体に失敗した場合は、以下の保存フローにフォールバック
+        }
+      }
+      // blobが生成できなかった場合も保存フローにフォールバック
+    }
+
+    // 非対応環境：画像をダウンロード保存し、手動での添付を案内
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = 'teacher-overtime-card.png';
+    a.click();
+    statusEl.textContent = '画像を保存しました。「Xで投稿する」から投稿画面を開き、この画像を添付してください。';
+  } catch (e) {
+    statusEl.textContent = '画像の生成に失敗しました。通信環境を確認のうえ、もう一度試してください。';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = GENERATE_LABEL;
+  }
+});
+
+document.getElementById('btnTweet').addEventListener('click', () => {
+  if (!lastResult) return;
+  let url = 'https://twitter.com/intent/tweet?text=' + encodeURIComponent(buildShareText());
+  // 入力条件を埋め込んだURLを添付し、見た人が同じ条件から再計算できるようにする
+  if (lastResult.shareUrl) url += '&url=' + encodeURIComponent(lastResult.shareUrl);
+  window.open(url, '_blank', 'noopener');
+  document.getElementById('shareStatus').textContent =
+    '「' + GENERATE_LABEL + '」で作成した画像を、投稿に添付してください。';
+});
+</script>
+</body>
+</html>
